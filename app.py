@@ -1,11 +1,20 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from typing import List, Dict, Tuple
 import torch
 import uvicorn
-import spacy
 from transformers import BertForTokenClassification, BertTokenizer
 import pickle
+import secrets
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Authentication credentials
+AUTH_USERNAME = os.getenv("API_USERNAME", "admin")
+AUTH_PASSWORD = os.getenv("API_PASSWORD", "password")
 
 # Constants
 MAX_LENGTH = 150
@@ -75,6 +84,7 @@ class SpacyNERModel:
 
 # Initialize FastAPI app
 app = FastAPI()
+security = HTTPBasic()
 bert_ner = BERTNERModel()
 spacy_ner = SpacyNERModel()
 
@@ -83,12 +93,26 @@ class TextInput(BaseModel):
     text: str
 
 
-@app.get("/")
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify HTTP Basic Auth credentials"""
+    correct_username = secrets.compare_digest(credentials.username, AUTH_USERNAME)
+    correct_password = secrets.compare_digest(credentials.password, AUTH_PASSWORD)
+    
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+
+@app.get("/", dependencies=[Depends(verify_credentials)])
 def read_root():
     return {"message": "Welcome to the NER API!"}
 
 
-@app.post("/predict/bert")
+@app.post("/predict/bert", dependencies=[Depends(verify_credentials)])
 def predict_ner_bert(data: TextInput):
     text = data.text
     predictions = bert_ner.predict(text)
@@ -96,7 +120,7 @@ def predict_ner_bert(data: TextInput):
     return {"text": text, "predictions": predictions, "annotated_text": annotated_text}
 
 
-@app.post("/predict/spacy")
+@app.post("/predict/spacy", dependencies=[Depends(verify_credentials)])
 def predict_ner_spacy(data: TextInput):
     text = data.text
     predictions = spacy_ner.predict(text)

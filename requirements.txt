@@ -1,0 +1,9 @@
+# be
+fastapi
+uvicorn
+torch
+sentence-transformers
+dotenv
+spacy
+# fe
+streamlit
